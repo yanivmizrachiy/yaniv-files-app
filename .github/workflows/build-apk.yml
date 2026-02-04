@@ -1,0 +1,141 @@
+name: Build APK (Yaniv Files App)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-apk
+  cancel-in-progress: true
+
+jobs:
+  bootstrap_and_build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Bootstrap Flutter project (if missing)
+        shell: bash
+        run: |
+          set -e
+          if [ ! -f "app/yaniv_files_app/pubspec.yaml" ]; then
+            mkdir -p app
+            flutter create app/yaniv_files_app --project-name yaniv_files_app --org com.yaniv.files
+          fi
+
+      - name: Apply structure + placeholders (idempotent)
+        shell: bash
+        run: |
+          set -e
+          cd app/yaniv_files_app
+
+          # Create clean architecture folders
+          mkdir -p lib/core lib/theme lib/widgets lib/features/files lib/features/share lib/features/preview
+
+          # Minimal fast app shell (RTL + placeholder screens)
+          cat > lib/main.dart <<'DART'
+          import 'package:flutter/material.dart';
+
+          void main() => runApp(const YanivFilesApp());
+
+          class YanivFilesApp extends StatelessWidget {
+            const YanivFilesApp({super.key});
+
+            @override
+            Widget build(BuildContext context) {
+              return MaterialApp(
+                debugShowCheckedModeBanner: false,
+                title: 'הקבצים של יניב',
+                locale: const Locale('he', 'IL'),
+                supportedLocales: const [Locale('he', 'IL')],
+                home: const HomeScreen(),
+              );
+            }
+          }
+
+          class HomeScreen extends StatelessWidget {
+            const HomeScreen({super.key});
+
+            @override
+            Widget build(BuildContext context) {
+              return Directionality(
+                textDirection: TextDirection.rtl,
+                child: Scaffold(
+                  appBar: AppBar(
+                    title: const Text('הקבצים של יניב'),
+                  ),
+                  body: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ElevatedButton(
+                          onPressed: () {},
+                          child: const Text('PDF'),
+                        ),
+                        const SizedBox(height: 12),
+                        ElevatedButton(
+                          onPressed: () {},
+                          child: const Text('תמונות'),
+                        ),
+                        const SizedBox(height: 12),
+                        ElevatedButton(
+                          onPressed: () {},
+                          child: const Text('אחרונים'),
+                        ),
+                        const SizedBox(height: 12),
+                        ElevatedButton(
+                          onPressed: () {},
+                          child: const Text('מועדפים'),
+                        ),
+                        const Spacer(),
+                        const Text(
+                          'שלב זה: שלד אפליקציה + ארכיטקטורה + Build אוטומטי ב-GitHub.\n'
+                          'השלב הבא: אינדוקס PDF + גלריית תמונות מדורגת + מסך תצוגה לפני שליחה + כפתור גדול לוואטסאפ שלך + בחירה עד 5.',
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }
+          }
+          DART
+
+      - name: Commit bootstrap (if changed)
+        shell: bash
+        run: |
+          set -e
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "yaniv-files-bot"
+            git config user.email "yaniv-files-bot@users.noreply.github.com"
+            git add -A
+            git commit -m "Bootstrap Flutter app skeleton + clean structure"
+            git push
+          fi
+
+      - name: Build APK (release)
+        shell: bash
+        run: |
+          set -e
+          cd app/yaniv_files_app
+          flutter pub get
+          flutter build apk --release
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yaniv-files-app-apk
+          path: app/yaniv_files_app/build/app/outputs/flutter-apk/app-release.apk
